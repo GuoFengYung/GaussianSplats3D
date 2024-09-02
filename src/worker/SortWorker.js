@@ -1,4 +1,8 @@
 import SorterWasm from './sorter.wasm';
+import SorterWasmNoSIMD from './sorter_no_simd.wasm';
+import SorterWasmNonShared from './sorter_non_shared.wasm';
+import SorterWasmNoSIMDNonShared from './sorter_no_simd_non_shared.wasm';
+import { isIOS, getIOSSemever } from '../Util.js';
 import { Constants } from '../Constants.js';
 
 function sortWorker(self) {
@@ -11,7 +15,7 @@ function sortWorker(self) {
     let splatCount;
     let indexesToSortOffset;
     let sortedIndexesOffset;
-    let transformIndexesOffset;
+    let sceneIndexesOffset;
     let transformsOffset;
     let precomputedDistancesOffset;
     let mappedDistancesOffset;
@@ -50,7 +54,7 @@ function sortWorker(self) {
         new Uint32Array(wasmMemory, frequenciesOffset, Constants.DepthMapRange).set(countsZero);
         wasmInstance.exports.sortIndexes(indexesToSortOffset, centersOffset, precomputedDistancesOffset,
                                          mappedDistancesOffset, frequenciesOffset, modelViewProjOffset,
-                                         sortedIndexesOffset, transformIndexesOffset, transformsOffset, Constants.DepthMapRange,
+                                         sortedIndexesOffset, sceneIndexesOffset, transformsOffset, Constants.DepthMapRange,
                                          splatSortCount, splatRenderCount, splatCount, usePrecomputedDistances, integerBasedSort,
                                          dynamicMode);
 
@@ -78,17 +82,20 @@ function sortWorker(self) {
     self.onmessage = (e) => {
         if (e.data.centers) {
             centers = e.data.centers;
-            transformIndexes = e.data.transformIndexes;
+            sceneIndexes = e.data.sceneIndexes;
             if (integerBasedSort) {
-                new Int32Array(wasmMemory, centersOffset, splatCount * 4).set(new Int32Array(centers));
+                new Int32Array(wasmMemory, centersOffset + e.data.range.from * Constants.BytesPerInt * 4,
+                               e.data.range.count * 4).set(new Int32Array(centers));
             } else {
-                new Float32Array(wasmMemory, centersOffset, splatCount * 4).set(new Float32Array(centers));
+                new Float32Array(wasmMemory, centersOffset + e.data.range.from * Constants.BytesPerFloat * 4,
+                                 e.data.range.count * 4).set(new Float32Array(centers));
             }
             if (dynamicMode) {
-                new Uint32Array(wasmMemory, transformIndexesOffset, splatCount).set(new Uint32Array(transformIndexes));
+                new Uint32Array(wasmMemory, sceneIndexesOffset + e.data.range.from * 4,
+                                e.data.range.count).set(new Uint32Array(sceneIndexes));
             }
             self.postMessage({
-                'sortSetupComplete': true,
+                'centerDataSet': true,
             });
         } else if (e.data.sort) {
             const renderCount = e.data.sort.splatRenderCount || 0;
@@ -146,8 +153,8 @@ function sortWorker(self) {
                 module: {},
                 env: {
                     memory: new WebAssembly.Memory({
-                        initial: totalPagesRequired * 2,
-                        maximum: totalPagesRequired * 4,
+                        initial: totalPagesRequired,
+                        maximum: totalPagesRequired,
                         shared: true,
                     }),
                 }
@@ -165,8 +172,8 @@ function sortWorker(self) {
                 mappedDistancesOffset = precomputedDistancesOffset + memoryRequiredForPrecomputedDistances;
                 frequenciesOffset = mappedDistancesOffset + memoryRequiredForMappedDistances;
                 sortedIndexesOffset = frequenciesOffset + memoryRequiredForIntermediateSortBuffers;
-                transformIndexesOffset = sortedIndexesOffset + memoryRequiredForSortedIndexes;
-                transformsOffset = transformIndexesOffset + memoryRequiredforTransformIndexes;
+                sceneIndexesOffset = sortedIndexesOffset + memoryRequiredForSortedIndexes;
+                transformsOffset = sceneIndexesOffset + memoryRequiredforTransformIndexes;
                 wasmMemory = sorterWasmImport.env.memory.buffer;
                 if (useSharedMemory) {
                     self.postMessage({
@@ -190,7 +197,7 @@ function sortWorker(self) {
     };
 }
 
-export function createSortWorker(splatCount, useSharedMemory, integerBasedSort, dynamicMode) {
+export function createSortWorker(splatCount, useSharedMemory, enableSIMDInSort, integerBasedSort, dynamicMode) {
     const worker = new Worker(
         URL.createObjectURL(
             new Blob(['(', sortWorker.toString(), ')(self)'], {
@@ -199,7 +206,24 @@ export function createSortWorker(splatCount, useSharedMemory, integerBasedSort, 
         ),
     );
 
-    const sorterWasmBinaryString = atob(SorterWasm);
+    let sourceWasm = SorterWasm;
+
+    // iOS makes choosing the right WebAssembly configuration tricky :(
+    let iOSSemVer = isIOS() ? getIOSSemever() : null;
+    if (!enableSIMDInSort && !useSharedMemory) {
+        sourceWasm = SorterWasmNoSIMD;
+        if (iOSSemVer && iOSSemVer.major < 16 && iOSSemVer.minor < 4) {
+            sourceWasm = SorterWasmNoSIMDNonShared;
+        }
+    } else if (!enableSIMDInSort) {
+        sourceWasm = SorterWasmNoSIMD;
+    } else if (!useSharedMemory) {
+        if (iOSSemVer && iOSSemVer.major < 16 && iOSSemVer.minor < 4) {
+            sourceWasm = SorterWasmNonShared;
+        }
+    }
+
+    const sorterWasmBinaryString = atob(sourceWasm);
     const sorterWasmBytes = new Uint8Array(sorterWasmBinaryString.length);
     for (let i = 0; i < sorterWasmBinaryString.length; i++) {
         sorterWasmBytes[i] = sorterWasmBinaryString.charCodeAt(i);

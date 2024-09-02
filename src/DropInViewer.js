@@ -19,11 +19,27 @@ export class DropInViewer extends THREE.Group {
         options.renderer = undefined;
 
         this.viewer = new Viewer(options);
+        this.splatMesh = null;
+        this.updateSplatMesh();
 
         this.callbackMesh = DropInViewer.createCallbackMesh();
         this.add(this.callbackMesh);
         this.callbackMesh.onBeforeRender = DropInViewer.onBeforeRender.bind(this, this.viewer);
 
+        this.viewer.onSplatMeshChanged(() => {
+            this.updateSplatMesh();
+        });
+
+    }
+
+    updateSplatMesh() {
+        if (this.splatMesh !== this.viewer.splatMesh) {
+            if (this.splatMesh) {
+                this.remove(this.splatMesh);
+            }
+            this.splatMesh = this.viewer.splatMesh;
+            this.add(this.viewer.splatMesh);
+        }
     }
 
     /**
@@ -49,11 +65,7 @@ export class DropInViewer extends THREE.Group {
      */
     addSplatScene(path, options = {}) {
         if (options.showLoadingUI !== false) options.showLoadingUI = true;
-        const loadPromise = this.viewer.addSplatScene(path, options);
-        loadPromise.then(() => {
-            this.add(this.viewer.splatMesh);
-        });
-        return loadPromise;
+        return this.viewer.addSplatScene(path, options);
     }
 
     /**
@@ -76,11 +88,7 @@ export class DropInViewer extends THREE.Group {
      */
     addSplatScenes(sceneOptions, showLoadingUI) {
         if (showLoadingUI !== false) showLoadingUI = true;
-        const loadPromise = this.viewer.addSplatScenes(sceneOptions, showLoadingUI);
-        loadPromise.then(() => {
-            this.add(this.viewer.splatMesh);
-        });
-        return loadPromise;
+        return this.viewer.addSplatScenes(sceneOptions, showLoadingUI);
     }
 
     /**
@@ -90,6 +98,18 @@ export class DropInViewer extends THREE.Group {
      */
     getSplatScene(sceneIndex) {
         return this.viewer.getSplatScene(sceneIndex);
+    }
+
+    removeSplatScene(index, showLoadingUI = true) {
+        return this.viewer.removeSplatScene(index, showLoadingUI);
+    }
+
+    removeSplatScenes(indexes, showLoadingUI = true) {
+        return this.viewer.removeSplatScenes(indexes, showLoadingUI);
+    }
+
+    getSceneCount() {
+        return this.viewer.getSceneCount();
     }
 
     dispose() {

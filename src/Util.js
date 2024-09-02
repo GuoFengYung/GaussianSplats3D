@@ -59,15 +59,12 @@ export const fetchWithProgress = function(path, onProgress, saveChunks = true) {
     const abortController = new AbortController();
     const signal = abortController.signal;
     let aborted = false;
-    let rejectFunc = null;
-    const abortHandler = () => {
-        abortController.abort();
-        rejectFunc(new AbortedPromiseError('Fetch aborted.'));
+    const abortHandler = (reason) => {
+        abortController.abort(new AbortedPromiseError(reason));
         aborted = true;
     };
 
     return new AbortablePromise((resolve, reject) => {
-        rejectFunc = reject;
         fetch(path, { signal })
         .then(async (data) => {
             const reader = data.body.getReader();
@@ -109,6 +106,9 @@ export const fetchWithProgress = function(path, onProgress, saveChunks = true) {
                     break;
                 }
             }
+        })
+        .catch((error) => {
+            reject(error);
         });
     }, abortHandler);
 
@@ -138,10 +138,82 @@ export const disposeAllMeshes = (object3D) => {
     }
 };
 
-export const delayedExecute = (func) => {
+export const delayedExecute = (func, fast) => {
     return new Promise((resolve) => {
         window.setTimeout(() => {
             resolve(func());
-        }, 1);
+        }, fast ? 1 : 50);
     });
 };
+
+
+export const getSphericalHarmonicsComponentCountForDegree = (sphericalHarmonicsDegree = 0) => {
+    switch (sphericalHarmonicsDegree) {
+        case 1:
+            return 9;
+        case 2:
+            return 24;
+    }
+    return 0;
+};
+
+export const nativePromiseWithExtractedComponents = () => {
+    let resolver;
+    let rejecter;
+    const promise = new Promise((resolve, reject) => {
+        resolver = resolve;
+        rejecter = reject;
+    });
+    return {
+        'promise': promise,
+        'resolve': resolver,
+        'reject': rejecter
+    };
+};
+
+export const abortablePromiseWithExtractedComponents = (abortHandler) => {
+    let resolver;
+    let rejecter;
+    if (!abortHandler) {
+        abortHandler = () => {};
+    }
+    const promise = new AbortablePromise((resolve, reject) => {
+        resolver = resolve;
+        rejecter = reject;
+    }, abortHandler);
+    return {
+        'promise': promise,
+        'resolve': resolver,
+        'reject': rejecter
+    };
+};
+
+class Semver {
+    constructor(major, minor, patch) {
+        this.major = major;
+        this.minor = minor;
+        this.patch = patch;
+    }
+
+    toString() {
+        return `${this.major}_${this.minor}_${this.patch}`;
+    }
+}
+
+export function isIOS() {
+    const ua = navigator.userAgent;
+    return ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0;
+}
+
+export function getIOSSemever() {
+    if (isIOS()) {
+        const extract = navigator.userAgent.match(/OS (\d+)_(\d+)_?(\d+)?/);
+        return new Semver(
+            parseInt(extract[1] || 0, 10),
+            parseInt(extract[2] || 0, 10),
+            parseInt(extract[3] || 0, 10)
+        );
+    } else {
+        return null; // or [0,0,0]
+    }
+}
