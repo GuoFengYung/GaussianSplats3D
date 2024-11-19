@@ -1,4 +1,4 @@
-# 3D Gaussian splatting for Three.js
+# 3D Gaussian splatting for Three.jsp
 
 Three.js-based implemetation of a renderer for [3D Gaussian Splatting for Real-Time Radiance Field Rendering](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/), a technique for generating 3D scenes from 2D images. Their project is CUDA-based and needs to run natively on your machine, but I wanted to build a viewer that was accessible via the web.
 
